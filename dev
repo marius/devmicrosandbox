@@ -182,6 +182,7 @@ end
 
 def cmd_exec
   start_backup_loop
+  ENV['OPENROUTER_API_KEY'] = openrouter_key
   args = ARGV[1..] || []
   args = ['fish'] if args.empty?
   exec('microsandbox', 'exec', SANDBOX_NAME, '--', *args)
@@ -189,6 +190,7 @@ end
 
 def cmd_opencode
   start_backup_loop
+  ENV['OPENROUTER_API_KEY'] = openrouter_key
   args = ARGV[1..] || []
   exec('microsandbox', 'exec', SANDBOX_NAME, '--', 'opencode', *args)
 end
