@@ -140,59 +140,49 @@ def cmd_check_git
     end
 
     if problems.empty?
-      puts 'OK - all branches contain the last snapshot as an ancestor'
+      puts 'Git OK - all branches contain the last snapshot as an ancestor'
     else
-      puts 'PROBLEMS DETECTED:'
+      puts 'Git PROBLEMS DETECTED:'
       problems.each { |p| puts "  - #{p}" }
     end
   end
 end
 
-def sandbox_running?
-  out, status = Open3.capture2('microsandbox', 'inspect', '--format', 'json', SANDBOX_NAME)
-  return false unless status.success?
-
-  data = JSON.parse(out)
-  data['status'].to_s.casecmp('running').zero?
-rescue StandardError
-  false
-end
-
-def cmd_backup_loop
-  loop do
-    sleep BACKUP_INTERVAL
-    break unless sandbox_running?
-
-    begin
-      cmd_backup
-    rescue StandardError => e
-      warn "background backup failed: #{e.message}"
-    end
-
-  end
+def cmd_exec(args = nil)
   cmd_backup
-  cmd_check_git
-end
+  stop = false
+  thread = Thread.new do
+    loop do
+      break if stop
+      sleep BACKUP_INTERVAL
+      break if stop
 
-def start_backup_loop
-  cmd_backup # initial backup
-  pid = Process.spawn(RbConfig.ruby, $0, '_backup_loop')
-  Process.detach(pid)
-end
+      begin
+        cmd_backup
+      rescue StandardError => e
+        warn "background backup failed: #{e.message}"
+      end
+    end
+    puts 'creating one last backup'
+    cmd_backup
+    cmd_check_git
+  end
+  thread.abort_on_exception = false
 
-def cmd_exec
-  start_backup_loop
   ENV['OPENROUTER_API_KEY'] = openrouter_key
-  args = ARGV[1..] || []
+  args = ARGV[1..] if args.nil?
   args = ['fish'] if args.empty?
-  exec('microsandbox', 'exec', SANDBOX_NAME, '--', *args)
+  ok = system('microsandbox', 'exec', SANDBOX_NAME, '--', *args)
+
+  stop = true
+  thread.wakeup # interrupts sleep
+  puts 'waiting for backup thread to finish'
+  thread.join
+  exit(ok ? 0 : 1)
 end
 
 def cmd_opencode
-  start_backup_loop
-  ENV['OPENROUTER_API_KEY'] = openrouter_key
-  args = ARGV[1..] || []
-  exec('microsandbox', 'exec', SANDBOX_NAME, '--', 'opencode', *args)
+  cmd_exec(['opencode', *ARGV[1..]])
 end
 
 COMMANDS = {
@@ -202,8 +192,7 @@ COMMANDS = {
   'exec' => method(:cmd_exec),
   'opencode' => method(:cmd_opencode),
   'backup' => method(:cmd_backup),
-  'check-git' => method(:cmd_check_git),
-  '_backup_loop' => method(:cmd_backup_loop)
+  'check-git' => method(:cmd_check_git)
 }.freeze
 
 handler = COMMANDS[ARGV[0]]
