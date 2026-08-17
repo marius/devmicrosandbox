@@ -1,0 +1,80 @@
+#!/usr/bin/env ruby
+# dev - manage the opencode microsandbox for this project
+#
+# Usage:
+#   ./dev build    - docker build + load into microsandbox
+#   ./dev create   - create the sandbox (volume, resources, secret)
+#   ./dev remove   - remove the sandbox
+#   ./dev exec     - drop into a shell inside the running sandbox
+#   ./dev opencode - run opencode inside the sandbox (args passed through)
+
+require 'json'
+require 'open3'
+
+AUTH_FILE = File.expand_path('~/.local/share/opencode/auth.json')
+IMAGE = 'opencode-sandbox'
+SANDBOX_NAME = 'opencode-dev'
+
+def openrouter_key
+  auth = JSON.parse(File.read(AUTH_FILE))
+  auth.dig('openrouter', 'key') or abort "No openrouter.key found in #{AUTH_FILE}"
+end
+
+def cmd_build
+  system('docker', 'build', '-t', IMAGE, '.') or abort 'docker build failed'
+
+  statuses = Open3.pipeline(
+    ['docker', 'save', IMAGE],
+    %w[microsandbox load]
+  )
+  abort 'docker save | microsandbox load failed' unless statuses.all?(&:success?)
+end
+
+def cmd_create
+  ENV['OPENROUTER_API_KEY'] = openrouter_key
+  workspace = Dir.pwd
+
+  created = system(
+    'microsandbox', 'create', IMAGE,
+    '--volume', "#{workspace}:/workspace",
+    '--memory', '6G',
+    '--cpus', '6',
+    '--name', SANDBOX_NAME,
+    '--workdir', '/workspace',
+    '--secret', 'OPENROUTER_API_KEY@openrouter.ai'
+  )
+  abort 'microsandbox create failed' unless created
+end
+
+def cmd_remove
+  removed = system("microsandbox remove --force #{SANDBOX_NAME}")
+  abort 'microsandbox remove failed' unless removed
+end
+
+def cmd_exec
+  args = ARGV[1..] || []
+  args = ['fish'] if args.empty?
+  exec('microsandbox', 'exec', SANDBOX_NAME, '--', *args)
+end
+
+def cmd_opencode
+  args = ARGV[1..] || []
+  exec('microsandbox', 'exec', SANDBOX_NAME, '--', 'opencode', *args)
+end
+
+COMMANDS = {
+  'build' => method(:cmd_build),
+  'create' => method(:cmd_create),
+  'remove' => method(:cmd_remove),
+  'exec' => method(:cmd_exec),
+  'opencode' => method(:cmd_opencode)
+}.freeze
+
+handler = COMMANDS[ARGV[0]]
+
+unless handler
+  warn "Usage: #{File.basename($0)} <#{COMMANDS.keys.join('|')}>"
+  exit 1
+end
+
+handler.call
