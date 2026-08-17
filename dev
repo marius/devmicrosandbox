@@ -2,18 +2,27 @@
 # dev - manage the opencode microsandbox for this project
 #
 # Usage:
-#   ./dev build    - docker build + load into microsandbox
-#   ./dev create   - create the sandbox (volume, resources, secret)
-#   ./dev remove   - remove the sandbox
-#   ./dev exec     - drop into a shell inside the running sandbox
-#   ./dev opencode - run opencode inside the sandbox (args passed through)
+#   ./dev build     - docker build + load into microsandbox
+#   ./dev create    - create the sandbox (volume, resources, secret)
+#   ./dev remove    - remove the sandbox
+#   ./dev exec      - drop into a shell inside the running sandbox
+#   ./dev opencode  - run opencode inside the sandbox (args passed through)
+#   ./dev backup    - take a git snapshot backup right now
+#   ./dev check-git - check the current repo against the latest snapshot
 
 require 'json'
 require 'open3'
+require 'fileutils'
+require 'time'
 
 AUTH_FILE = File.expand_path('~/.local/share/opencode/auth.json')
 IMAGE = 'opencode-sandbox'
 SANDBOX_NAME = 'opencode-dev'
+
+BACKUP_DIR = "#{Dir.pwd}_backups"
+GIT_MIRROR_DIR = File.join(BACKUP_DIR, 'git')
+RESTIC_REPO = File.join(BACKUP_DIR, 'restic')
+BACKUP_INTERVAL = 300 # seconds
 
 def openrouter_key
   auth = JSON.parse(File.read(AUTH_FILE))
@@ -51,13 +60,135 @@ def cmd_remove
   abort 'microsandbox remove failed' unless removed
 end
 
+def cmd_backup_git
+  workspace = Dir.pwd
+
+  unless Dir.exist?(GIT_MIRROR_DIR)
+    FileUtils.mkdir_p(GIT_MIRROR_DIR)
+    puts 'Creating new git repository'
+    system('git', 'init', '--bare', GIT_MIRROR_DIR) or abort 'git init --bare failed'
+  end
+
+  timestamp = Time.now.strftime('%Y%m%dT%H%M%S')
+  refspec = "+refs/heads/*:refs/snapshots/#{timestamp}/*"
+
+  Dir.chdir(GIT_MIRROR_DIR) do
+    system('git', 'fetch', '--quiet', workspace, refspec) or warn 'git fetch failed'
+  end
+end
+
+def cmd_backup_files
+  workspace = Dir.pwd
+  name = File.basename(workspace)
+
+  unless Dir.exist?(RESTIC_REPO)
+    FileUtils.mkdir_p(RESTIC_REPO)
+    puts 'Creating new restic repository'
+    system(
+      'restic', '--insecure-no-password',
+      'init', '-r', RESTIC_REPO) or abort 'restic init failed'
+  end
+
+  system(
+    'restic', '-q', '--insecure-no-password', '-r', RESTIC_REPO, 'backup', workspace,
+    '--tag', 'opencode-sandbox', '--tag', name
+  ) or warn 'restic backup failed'
+end
+
+def cmd_backup
+  cmd_backup_git
+  cmd_backup_files
+end
+
+def cmd_check_git
+  unless Dir.exist?(GIT_MIRROR_DIR)
+    warn "No git mirror found at #{GIT_MIRROR_DIR} - run a backup first"
+    return
+  end
+
+  workspace = Dir.pwd
+
+  Dir.chdir(GIT_MIRROR_DIR) do
+    refs = `git for-each-ref --format='%(refname)' refs/snapshots/`.lines.map(&:strip)
+    if refs.empty?
+      warn 'No snapshots found yet'
+      return
+    end
+
+    latest_timestamp = refs.map { |r| r.split('/')[2] }.max
+    latest_refs = refs.select { |r| r.include?("refs/snapshots/#{latest_timestamp}/") }
+    puts "Checking against snapshot #{latest_timestamp} (#{latest_refs.size} branches)"
+
+    problems = []
+
+    latest_refs.each do |ref|
+      branch = ref.split('/').last
+      old_sha = `git rev-parse #{ref}`.strip
+
+      current_sha = Dir.chdir(workspace) { `git rev-parse --verify #{branch} 2>/dev/null`.strip }
+
+      if current_sha.empty?
+        problems << "branch '#{branch}' no longer exists in the workspace (was #{old_sha[0..7]})"
+        next
+      end
+
+      Dir.chdir(workspace) do
+        unless system('git', 'merge-base', '--is-ancestor', old_sha, current_sha)
+          problems << "branch '#{branch}' history was rewritten - #{old_sha[0..7]} is no longer an ancestor of #{current_sha[0..7]}"
+        end
+      end
+    end
+
+    if problems.empty?
+      puts 'OK - all branches contain the last snapshot as an ancestor'
+    else
+      puts 'PROBLEMS DETECTED:'
+      problems.each { |p| puts "  - #{p}" }
+    end
+  end
+end
+
+def sandbox_running?
+  out, status = Open3.capture2('microsandbox', 'inspect', '--format', 'json', SANDBOX_NAME)
+  return false unless status.success?
+
+  data = JSON.parse(out)
+  data['status'].to_s.casecmp('running').zero?
+rescue StandardError
+  false
+end
+
+def cmd_backup_loop
+  loop do
+    sleep BACKUP_INTERVAL
+    break unless sandbox_running?
+
+    begin
+      cmd_backup
+    rescue StandardError => e
+      warn "background backup failed: #{e.message}"
+    end
+
+  end
+  cmd_backup
+  cmd_check_git
+end
+
+def start_backup_loop
+  cmd_backup # initial backup
+  pid = Process.spawn(RbConfig.ruby, $0, '_backup_loop')
+  Process.detach(pid)
+end
+
 def cmd_exec
+  start_backup_loop
   args = ARGV[1..] || []
   args = ['fish'] if args.empty?
   exec('microsandbox', 'exec', SANDBOX_NAME, '--', *args)
 end
 
 def cmd_opencode
+  start_backup_loop
   args = ARGV[1..] || []
   exec('microsandbox', 'exec', SANDBOX_NAME, '--', 'opencode', *args)
 end
@@ -67,7 +198,10 @@ COMMANDS = {
   'create' => method(:cmd_create),
   'remove' => method(:cmd_remove),
   'exec' => method(:cmd_exec),
-  'opencode' => method(:cmd_opencode)
+  'opencode' => method(:cmd_opencode),
+  'backup' => method(:cmd_backup),
+  'check-git' => method(:cmd_check_git),
+  '_backup_loop' => method(:cmd_backup_loop)
 }.freeze
 
 handler = COMMANDS[ARGV[0]]
