@@ -14,6 +14,7 @@ require 'json'
 require 'open3'
 require 'fileutils'
 require 'time'
+require 'digest'
 
 AUTH_FILE = File.expand_path('~/.local/share/opencode/auth.json')
 IMAGE = 'opencode-sandbox'
@@ -22,6 +23,7 @@ SANDBOX_NAME = 'opencode-dev'
 BACKUP_DIR = "#{Dir.pwd}_backups"
 GIT_MIRROR_DIR = File.join(BACKUP_DIR, 'git')
 RESTIC_REPO = File.join(BACKUP_DIR, 'restic')
+FINGERPRINT_FILE = File.join(BACKUP_DIR, 'last_fingerprint')
 BACKUP_INTERVAL = 300 # seconds
 
 def openrouter_key
@@ -100,6 +102,32 @@ def cmd_backup
   cmd_backup_files
 end
 
+def workspace_fingerprint
+  workspace = Dir.pwd
+  files = Dir.glob(File.join(workspace, '**', '*'), File::FNM_DOTMATCH)
+              .select { |f| File.file?(f) }
+              .sort
+  Digest::SHA256.hexdigest(
+    files.map { |f| "#{f.sub(workspace + File::SEPARATOR, '')}:#{Digest::SHA256.file(f).hexdigest}" }.join("\n")
+  )
+end
+
+def last_fingerprint
+  return nil unless File.exist?(FINGERPRINT_FILE)
+  File.read(FINGERPRINT_FILE).strip
+end
+
+def workspace_changed?
+  last_fingerprint != workspace_fingerprint
+end
+
+def cmd_backup_if_changed(force: false)
+  return unless force || workspace_changed?
+  cmd_backup
+  FileUtils.mkdir_p(BACKUP_DIR)
+  File.write(FINGERPRINT_FILE, workspace_fingerprint)
+end
+
 def cmd_check_git
   unless Dir.exist?(GIT_MIRROR_DIR)
     warn "No git mirror found at #{GIT_MIRROR_DIR} - run a backup first"
@@ -168,7 +196,7 @@ def human_size(bytes)
 end
 
 def cmd_exec(args = nil)
-  cmd_backup
+  cmd_backup_if_changed(force: true)
   stop = false
   thread = Thread.new do
     loop do
@@ -177,13 +205,13 @@ def cmd_exec(args = nil)
       break if stop
 
       begin
-        cmd_backup
+        cmd_backup_if_changed
       rescue StandardError => e
         warn "background backup failed: #{e.message}"
       end
     end
-    puts 'creating one last backup'
-    cmd_backup
+    puts 'creating one last backup, if there are changes'
+    cmd_backup_if_changed
     cmd_check_git
   end
   thread.abort_on_exception = false
