@@ -148,6 +148,20 @@ def cmd_check_git
   end
 end
 
+def backup_size
+  return unless Dir.exist?(BACKUP_DIR)
+  Dir.glob(File.join(BACKUP_DIR, '**', '*'), File::FNM_DOTMATCH)
+          .select { |f| File.file?(f) }
+          .sum { |f| File.size(f) }
+end
+
+def human_size(bytes)
+  units = %w[B KB MB GB TB]
+  power = 0
+  power += 1 while bytes >= 1024**(power + 1) && power < units.size - 1
+  '%.2f %s' % [bytes.to_f / (1024**power), units[power]]
+end
+
 def cmd_exec(args = nil)
   cmd_backup
   stop = false
@@ -178,6 +192,8 @@ def cmd_exec(args = nil)
   thread.wakeup # interrupts sleep
   puts 'waiting for backup thread to finish'
   thread.join
+
+  puts "Total backup size: #{human_size(backup_size)}"
   exit(ok ? 0 : 1)
 end
 
