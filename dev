@@ -109,6 +109,11 @@ def cmd_check_git
   workspace = Dir.pwd
 
   Dir.chdir(GIT_MIRROR_DIR) do
+    unless system('git', 'fsck', '--full', '--no-dangling', out: File::NULL, err: File::NULL)
+      puts 'Git mirror repository is corrupt - run a backup to repair it'
+      return
+    end
+
     refs = `git for-each-ref --format='%(refname)' refs/snapshots/`.lines.map(&:strip)
     if refs.empty?
       warn 'No snapshots found yet'
@@ -140,9 +145,9 @@ def cmd_check_git
     end
 
     if problems.empty?
-      puts 'Git OK - all branches contain the last snapshot as an ancestor'
+      puts 'Git backup OK'
     else
-      puts 'Git PROBLEMS DETECTED:'
+      puts 'Git backup PROBLEMS DETECTED:'
       problems.each { |p| puts "  - #{p}" }
     end
   end
