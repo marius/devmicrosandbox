@@ -12,11 +12,13 @@ Infrastructure for an OpenCode "microsandbox" (VM-based dev environment). The on
 - `./dev exec` — open a shell inside the sandbox (defaults to `fish`); forwards remaining args
 - `./dev opencode [args...]` — run `opencode` inside the sandbox, args passed through
 - `./dev backup` — snapshot now (git bare mirror + restic files)
+- `./dev gc` — garbage-collect old backups by retention policy (time-tiered: keep last + daily + weekly + monthly); runs automatically at the end of `exec`/`opencode` sessions that produced a backup
 - `./dev check-git` — verify the repo history against the latest git snapshot (rewrites/dangling branches)
 
 ## Gotchas
 
 - **`exec`/`opencode` auto-backup**: both kick off a git+restic backup first, then spawn a background thread that re-backups every 300s until the session exits. A long session will generate many snapshots — don't mistake this for a bug.
+- **GC retention**: time-tiered, defaults `GC_KEEP_LAST=300 GC_KEEP_DAILY=14 GC_KEEP_WEEKLY=8 GC_KEEP_MONTHLY=6` (env-overridable). Git GC prunes expired `refs/snapshots/<ts>/*` refs then runs `git gc --prune=now`; restic runs `forget --keep-* --prune`. Point-in-time recovery is limited to the retention window. The newest git snapshot is always retained regardless of `GC_KEEP_LAST`.
 - **Backups live outside the repo**: `${workspace}_backups/` as a sibling directory (contains `git/` bare mirror and `restic/`). The `_backups` dir is not part of this git repo.
 - **External deps required**: `docker`, `microsandbox`, `restic`, `git` and Ruby are prerequisites. `dev create`/`exec`/`opencode` read the OpenRouter key from `~/.local/share/opencode/auth.json` and export it as `OPENROUTER_API_KEY` for the sandbox.
 - **Rebuild after editing the image**: `Dockerfile` + `packages.txt` changes only take effect after `./dev build && ./dev remove && ./dev create`.

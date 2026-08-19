@@ -8,6 +8,7 @@
 #   ./dev exec      - drop into a shell inside the running sandbox
 #   ./dev opencode  - run opencode inside the sandbox (args passed through)
 #   ./dev backup    - take a git snapshot backup right now
+#   ./dev gc        - garbage-collect old backups (time-tiered retention)
 #   ./dev check-git - check the current repo against the latest snapshot
 
 require 'json'
@@ -25,6 +26,11 @@ GIT_MIRROR_DIR = File.join(BACKUP_DIR, 'git')
 RESTIC_REPO = File.join(BACKUP_DIR, 'restic')
 FINGERPRINT_FILE = File.join(BACKUP_DIR, 'last_fingerprint')
 BACKUP_INTERVAL = 300 # seconds
+
+GC_KEEP_LAST = ENV.fetch('GC_KEEP_LAST', '300').to_i
+GC_KEEP_DAILY = ENV.fetch('GC_KEEP_DAILY', '14').to_i
+GC_KEEP_WEEKLY = ENV.fetch('GC_KEEP_WEEKLY', '8').to_i
+GC_KEEP_MONTHLY = ENV.fetch('GC_KEEP_MONTHLY', '6').to_i
 
 def openrouter_key
   auth = JSON.parse(File.read(AUTH_FILE))
@@ -181,6 +187,84 @@ def cmd_check_git
   end
 end
 
+def git_timestamps
+  return [] unless Dir.exist?(GIT_MIRROR_DIR)
+  Dir.chdir(GIT_MIRROR_DIR) do
+    `git for-each-ref --format='%(refname)' refs/snapshots/`.lines
+      .map { |l| l.split('/')[2] }
+      .sort
+      .uniq
+      .reverse
+  end
+end
+
+def retained_timestamps(timestamps, now = Time.now)
+  return [] if timestamps.empty?
+  retained = [timestamps.first] + timestamps.first(GC_KEEP_LAST)
+  parsed = timestamps.map { |t| [t, Time.strptime(t, '%Y%m%dT%H%M%S')] }
+
+  GC_KEEP_DAILY.times do |i|
+    day = (now - i * 86400).strftime('%Y%m%d')
+    newest = parsed.select { |_, tm| tm.strftime('%Y%m%d') == day }.map(&:first).max
+    retained << newest if newest
+  end
+
+  GC_KEEP_WEEKLY.times do |i|
+    week = (now - i * 7 * 86400).strftime('%G-W%V')
+    newest = parsed.select { |_, tm| tm.strftime('%G-W%V') == week }.map(&:first).max
+    retained << newest if newest
+  end
+
+  GC_KEEP_MONTHLY.times do |i|
+    month = (now - i * 30 * 86400).strftime('%Y%m')
+    newest = parsed.select { |_, tm| tm.strftime('%Y%m') == month }.map(&:first).max
+    retained << newest if newest
+  end
+
+  retained.sort.uniq
+end
+
+def gc_git
+  return unless Dir.exist?(GIT_MIRROR_DIR)
+  timestamps = git_timestamps
+  return if timestamps.empty?
+  retained = retained_timestamps(timestamps)
+  return if retained.empty?
+  expired = timestamps - retained
+  return if expired.empty?
+
+  Dir.chdir(GIT_MIRROR_DIR) do
+    expired.each do |ts|
+      `git for-each-ref --format='%(refname)' refs/snapshots/#{ts}/`.lines.map(&:strip).each do |ref|
+        system('git', 'update-ref', '-d', ref)
+      end
+    end
+    system('git', 'gc', '--prune=now', '--quiet')
+  end
+  puts "git: pruned #{expired.size} snapshot group(s), kept #{retained.size}"
+end
+
+def gc_restic
+  return unless Dir.exist?(RESTIC_REPO)
+  system(
+    'restic', '-q', '--insecure-no-password', '-r', RESTIC_REPO,
+    'forget',
+    '--keep-last', GC_KEEP_LAST.to_s,
+    '--keep-daily', GC_KEEP_DAILY.to_s,
+    '--keep-weekly', GC_KEEP_WEEKLY.to_s,
+    '--keep-monthly', GC_KEEP_MONTHLY.to_s,
+    '--prune'
+  ) or warn 'restic forget failed'
+end
+
+def cmd_gc
+  before = backup_size || 0
+  gc_git
+  gc_restic
+  after = backup_size || 0
+  puts "Backup garbage collection freed: #{human_size(before - after)}"
+end
+
 def backup_size
   return unless Dir.exist?(BACKUP_DIR)
   Dir.glob(File.join(BACKUP_DIR, '**', '*'), File::FNM_DOTMATCH)
@@ -192,7 +276,7 @@ def human_size(bytes)
   units = %w[B KB MB GB TB]
   power = 0
   power += 1 while bytes >= 1024**(power + 1) && power < units.size - 1
-  '%.2f %s' % [bytes.to_f / (1024**power), units[power]]
+  '%g %s' % [bytes.to_f / (1024**power), units[power]]
 end
 
 def cmd_exec(args = nil)
@@ -213,6 +297,11 @@ def cmd_exec(args = nil)
     puts 'creating one last backup, if there are changes'
     cmd_backup_if_changed
     cmd_check_git
+    begin
+      cmd_gc
+    rescue StandardError => e
+      warn "gc failed: #{e.message}"
+    end
   end
   thread.abort_on_exception = false
 
@@ -241,6 +330,7 @@ COMMANDS = {
   'exec' => method(:cmd_exec),
   'opencode' => method(:cmd_opencode),
   'backup' => method(:cmd_backup),
+  'gc' => method(:cmd_gc),
   'check-git' => method(:cmd_check_git)
 }.freeze
 
