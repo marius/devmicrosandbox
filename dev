@@ -307,7 +307,7 @@ def cmd_exec(args = nil)
 
   ENV['OPENROUTER_API_KEY'] = openrouter_key
   args = ARGV[1..] if args.nil?
-  args = ['fish'] if args.empty?
+  args = [ENV['SHELL'] || 'fish'] if args.empty?
   ok = system('microsandbox', 'exec', SANDBOX_NAME, '--', *args)
 
   stop = true
