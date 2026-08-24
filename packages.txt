@@ -1,1 +1,6 @@
 ruby
+fish
+fd-find
+ripgrep
+# Needed for top when using Alacritty
+ncurses-term

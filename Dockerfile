@@ -3,4 +3,5 @@ COPY packages.txt /tmp/packages.txt
 RUN apt-get update \
       && grep -v '^#' /tmp/packages.txt | xargs apt-get install -y --no-install-recommends \
       && rm -rf /var/lib/apt/lists/* /tmp/packages.txt \
-      && npm install -g opencode-ai --allow-scripts=opencode-ai
+      && npm install -g --allow-scripts=opencode-ai opencode-ai \
+      && npm install -g --ignore-scripts @earendil-works/pi-coding-agent
