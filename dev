@@ -10,6 +10,12 @@
 #   ./dev backup    - take a git snapshot backup right now
 #   ./dev gc        - garbage-collect old backups (time-tiered retention)
 #   ./dev check-git - check the current repo against the latest snapshot
+#
+# Dotfiles/dotdirs to read-only-mount into every sandbox are listed one per
+# line in ~/.config/opencode-sandbox/dotfiles.txt as "host_path:guest_path"
+# (host_path relative to $HOME), e.g.:
+#   .gitconfig:/root/.gitconfig
+#   .config/fish:/root/.config/fish
 
 require 'json'
 require 'open3'
@@ -26,6 +32,10 @@ GIT_MIRROR_DIR = File.join(BACKUP_DIR, 'git')
 RESTIC_REPO = File.join(BACKUP_DIR, 'restic')
 FINGERPRINT_FILE = File.join(BACKUP_DIR, 'last_fingerprint')
 BACKUP_INTERVAL = 300 # seconds
+
+# One shared list of host dotfiles/dotdirs to read-only mount into every
+# sandbox, regardless of which project it was created for.
+DOTFILES_FILE = File.expand_path('~/.config/devmicrosandbox/dotfiles.txt')
 
 GC_KEEP_LAST = ENV.fetch('GC_KEEP_LAST', '300').to_i
 GC_KEEP_DAILY = ENV.fetch('GC_KEEP_DAILY', '14').to_i
@@ -47,6 +57,24 @@ def cmd_build
   abort 'docker save | microsandbox load failed' unless statuses.all?(&:success?)
 end
 
+def dotfile_mount_args
+  return [] unless File.exist?(DOTFILES_FILE)
+
+  File.readlines(DOTFILES_FILE).filter_map do |line|
+    line = line.strip
+    next if line.empty? || line.start_with?('#')
+
+    host_rel, guest_path = line.split(':', 2)
+    abort "Bad dotfiles.txt line: #{line}" unless guest_path
+
+    host_path = File.expand_path(host_rel, Dir.home)
+    abort "Missing dotfile on host: #{host_path}" unless File.exist?(host_path)
+
+    flag = File.directory?(host_path) ? '--mount-dir' : '--mount-file'
+    [flag, "#{host_path}:#{guest_path}:ro"]
+  end.flatten
+end
+
 def cmd_create
   ENV['OPENROUTER_API_KEY'] = openrouter_key
   workspace = Dir.pwd
@@ -58,7 +86,8 @@ def cmd_create
     '--cpus', '6',
     '--name', SANDBOX_NAME,
     '--workdir', '/workspace',
-    '--secret', 'OPENROUTER_API_KEY@openrouter.ai'
+    '--secret', 'OPENROUTER_API_KEY@openrouter.ai',
+    *dotfile_mount_args
   )
   abort 'microsandbox create failed' unless created
 end
