@@ -12,7 +12,7 @@
 #   ./dev check-git - check the current repo against the latest snapshot
 #
 # Dotfiles/dotdirs to read-only-mount into every sandbox are listed one per
-# line in ~/.config/opencode-sandbox/dotfiles.txt as "host_path:guest_path"
+# line in ~/.config/devmicrosandbox/dotfiles.txt as "host_path:guest_path"
 # (host_path relative to $HOME), e.g.:
 #   .gitconfig:/root/.gitconfig
 #   .config/fish:/root/.config/fish

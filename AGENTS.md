@@ -7,7 +7,7 @@ Infrastructure for an OpenCode "microsandbox" (VM-based dev environment). The on
 `dev` is the single entrypoint; run it as `./dev <command>` (it is executable Ruby, no build step):
 
 - `./dev build` — `docker build` the image, then pipe `docker save | microsandbox load` into the sandbox runtime
-- `./dev create` — create the sandbox (6G RAM / 6 CPUs, mounts the repo at `/workspace`, injects `OPENROUTER_API_KEY` as a secret)
+- `./dev create` — create the sandbox (6G RAM / 6 CPUs, mounts the repo at `/workspace`, injects `OPENROUTER_API_KEY` as a secret, read-only-mounts dotfiles from `~/.config/devmicrosandbox/dotfiles.txt`)
 - `./dev remove` — tear down the sandbox
 - `./dev exec` — open a shell inside the sandbox (defaults to `fish`); forwards remaining args
 - `./dev opencode [args...]` — run `opencode` inside the sandbox, args passed through
@@ -20,6 +20,7 @@ Infrastructure for an OpenCode "microsandbox" (VM-based dev environment). The on
 - **`exec`/`opencode` auto-backup**: both kick off a git+restic backup first, then spawn a background thread that re-backups every 300s until the session exits. A long session will generate many snapshots — don't mistake this for a bug.
 - **GC retention**: time-tiered, defaults `GC_KEEP_LAST=300 GC_KEEP_DAILY=14 GC_KEEP_WEEKLY=8 GC_KEEP_MONTHLY=6` (env-overridable). Git GC prunes expired `refs/snapshots/<ts>/*` refs then runs `git gc --prune=now`; restic runs `forget --keep-* --prune`. Point-in-time recovery is limited to the retention window. The newest git snapshot is always retained regardless of `GC_KEEP_LAST`.
 - **Backups live outside the repo**: `${workspace}_backups/` as a sibling directory (contains `git/` bare mirror and `restic/`). The `_backups` dir is not part of this git repo.
+- **Dotfiles**: `dev create` read-only-mounts host dotfiles into the sandbox per `~/.config/devmicrosandbox/dotfiles.txt`, one `host_path:guest_path` per line (`host_path` relative to `$HOME`, e.g. `.gitconfig:/root/.gitconfig`). Blank lines and `#` comments ignored; dirs become `--mount-dir`, files `--mount-file`. Missing dotfiles list means no mounts; missing host dotfile or malformed line aborts `create`.
 - **External deps required**: `docker`, `microsandbox`, `restic`, `git` and Ruby are prerequisites. `dev create`/`exec`/`opencode` read the OpenRouter key from `~/.local/share/opencode/auth.json` and export it as `OPENROUTER_API_KEY` for the sandbox.
 - **Rebuild after editing the image**: `Dockerfile` + `packages.txt` changes only take effect after `./dev build && ./dev remove && ./dev create`.
 - **`packages.txt`** lists apt packages; lines starting with `#` are ignored. The Docker base is `node:26` with a global `npm install -g opencode-ai`.
