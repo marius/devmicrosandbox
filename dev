@@ -57,7 +57,7 @@ def openrouter_key
 end
 
 def cmd_build
-  system('docker', 'build', '--no-cache', '-t', IMAGE, '.') or abort 'docker build failed'
+  system('docker', 'buildx', 'build', '--no-cache', '-t', IMAGE, '.') or abort 'docker build failed'
 
   statuses = Open3.pipeline(
     ['docker', 'save', IMAGE],
