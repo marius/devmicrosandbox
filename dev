@@ -2,15 +2,14 @@
 # dev - manage the opencode microsandbox for this project
 #
 # Each project directory gets its own sandbox (name derived from the cwd),
-# with the current directory mounted at /workspace. exec/opencode auto-create
-# the sandbox on first use, so an explicit `create` is optional.
+# with the current directory mounted at /workspace. exec auto-creates the
+# sandbox on first use, so an explicit `create` is optional.
 #
 # Usage:
 #   ./dev build     - docker build + load into microsandbox
 #   ./dev create    - create this directory's sandbox (volume, resources, secret)
 #   ./dev remove    - remove this directory's sandbox
 #   ./dev exec      - drop into a shell inside this directory's sandbox
-#   ./dev opencode  - run opencode inside this directory's sandbox (args passed through)
 #   ./dev backup    - take a git snapshot backup right now
 #   ./dev gc        - garbage-collect old backups (time-tiered retention)
 #   ./dev check-git - check the current repo against the latest snapshot
@@ -367,16 +366,11 @@ def cmd_exec(args = nil)
   exit(ok ? 0 : 1)
 end
 
-def cmd_opencode
-  cmd_exec(['opencode', *ARGV[1..]])
-end
-
 COMMANDS = {
   'build' => method(:cmd_build),
   'create' => method(:cmd_create),
   'remove' => method(:cmd_remove),
   'exec' => method(:cmd_exec),
-  'opencode' => method(:cmd_opencode),
   'backup' => method(:cmd_backup),
   'gc' => method(:cmd_gc),
   'check-git' => method(:cmd_check_git)

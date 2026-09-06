@@ -12,7 +12,7 @@ External dependencies:
 - git
 - ruby
 
-`dev create`/`exec`/`opencode` read the OpenRouter key from `~/.local/share/opencode/auth.json` and export it as `OPENROUTER_API_KEY` for the sandbox.
+`dev create`/`exec` read the OpenRouter key from `~/.local/share/opencode/auth.json` and export it as `OPENROUTER_API_KEY` for the sandbox.
 Inside the VM there is only a placeholder `OPENROUTER_API_KEY` variable, which gets replaced by the real key during requests to `openrouter.ai`.
 
 
@@ -25,16 +25,15 @@ Inside the VM there is only a placeholder `OPENROUTER_API_KEY` variable, which g
 | `./dev build` | `docker build` the image, then pipe `docker save \| microsandbox load` into the sandbox runtime |
 | `./dev create` | Create the sandbox (6G RAM / 6 CPUs, mounts the repo at `/workspace`, injects `OPENROUTER_API_KEY` as a secret) |
 | `./dev remove` | Tear down the sandbox |
-| `./dev exec` | Open a shell inside the sandbox (defaults to `fish`); forwards remaining args |
-| `./dev opencode [args...]` | Run `opencode` inside the sandbox, args passed through |
+| `./dev exec` | Open a shell inside the sandbox (defaults to `fish`); forwards remaining args (e.g. `./dev exec opencode`) |
 | `./dev backup` | Snapshot now (git mirror + restic) |
-| `./dev gc` | Garbage-collect old backups by retention policy (time-tiered); runs automatically at the end of `exec`/`opencode` sessions that produced a backup |
+| `./dev gc` | Garbage-collect old backups by retention policy (time-tiered); runs automatically at the end of `exec` sessions that produced a backup |
 | `./dev check-git` | Verify the repo history against the latest git snapshot |
 
 ## Backups
 
 - **Where**: Backups live outside the workspace in `${workspace}_backups/` (a sibling directory containing `git/` bare mirror and `restic/`). The `_backups` directory is not accessible by the VM.
-- **When**: `exec` and `opencode` kick off a git + restic backup first, then spawn a background thread that re-backups every 300s (if there are changes in the workspace) until the session exits.
+- **When**: `exec` kicks off a git + restic backup first, then spawns a background thread that re-backups every 300s (if there are changes in the workspace) until the session exits.
 - **What**: `backup` snapshots the workspace via a git mirror (refs under `refs/snapshots/<timestamp>/`) and a restic backup (tagged `opencode-sandbox`).
 
 ## GC retention policy
