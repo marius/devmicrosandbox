@@ -94,6 +94,7 @@ def cmd_create
     '--name', sandbox_name,
     '--workdir', '/workspace',
     '--secret', 'OPENROUTER_API_KEY@openrouter.ai',
+    '--env', 'OPENCODE_ENABLE_EXA=1',
     *dotfile_mount_args
   )
   abort 'microsandbox create failed' unless created
