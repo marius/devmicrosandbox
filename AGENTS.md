@@ -26,6 +26,6 @@ Infrastructure for an OpenCode "microsandbox" (VM-based dev environment). The on
 - **`packages.txt`** lists apt packages; lines starting with `#` are ignored. The Docker base is `node:26`.
 - **`setup.sh`** contains the image provisioning steps (apt install from `packages.txt`, global npm agents, herdr + integrations, okf CLI); the `Dockerfile` just copies it in and runs it with `bash`.
 
-## What's tracked here
+## Project Memory (OKF)
 
-Only `Dockerfile`, `dev`, `packages.txt` are committed. Actual project/sandbox work happens inside the sandbox and is snapshotted to `_backups`, not committed to this repo — commit only intended changes here.
+`knowledge/` holds OKF v0.2 project memory. **Opt-in**: write to it only when the user explicitly asks (e.g. "document this in OKF", "remember this"); never record knowledge automatically after tasks, features, or decisions. Reads are allowed when relevant — search-first, no bulk scans. When memory work is requested, load the `okf-agent-memory` skill for the full conventions and commands.
