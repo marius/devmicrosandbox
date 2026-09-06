@@ -28,6 +28,7 @@ require 'digest'
 
 AUTH_FILE = File.expand_path('~/.local/share/opencode/auth.json')
 IMAGE = 'devmsb'
+IMAGE_MAX_AGE = 7 * 24 * 60 * 60 # 1 week in seconds
 
 # One sandbox per project directory, so each sandbox's /workspace mount can
 # stay fixed at create time. Name includes a hash of the full path to avoid
@@ -85,6 +86,7 @@ def dotfile_mount_args
 end
 
 def cmd_create
+  refresh_image! if image_too_old?
   ENV['OPENROUTER_API_KEY'] = openrouter_key
     created = system(
     'microsandbox', 'create', IMAGE,
@@ -103,6 +105,51 @@ end
 def sandbox_exists?
   system('microsandbox', 'inspect', sandbox_name,
          out: File::NULL, err: File::NULL)
+end
+
+def image_created_at
+  out, status = Open3.capture2('microsandbox', 'image', 'inspect', IMAGE, '--format', 'json')
+  return nil unless status.success?
+
+  data = JSON.parse(out)
+  str = data['created_at']
+  return nil if str.nil? || str.empty?
+
+  Time.parse(str)
+rescue StandardError
+  nil
+end
+
+def image_too_old?
+  return false if @image_age_checked
+  @image_age_checked = true
+
+  created = image_created_at
+  if created.nil?
+    warn "Could not determine image '#{IMAGE}' age - continuing"
+    return false
+  end
+
+  age = Time.now - created
+  age = 0 if age.negative?
+  return false if age <= IMAGE_MAX_AGE
+
+  days = (age / 86_400).floor
+  puts "Image '#{IMAGE}' is #{days} days old (built #{created.strftime('%Y-%m-%d %H:%M %Z')}) - older than 1 week."
+  puts 'Refresh recommended: ./dev build && ./dev remove && ./dev create'
+  unless STDIN.tty?
+    warn 'Non-interactive session - continuing with old image.'
+    return false
+  end
+
+  print 'Refresh now? [y/N] '
+  answer = STDIN.gets&.strip&.downcase
+  answer == 'y' || answer == 'yes'
+end
+
+def refresh_image!
+  cmd_build
+  cmd_remove if sandbox_exists?
 end
 
 def cmd_remove
@@ -322,6 +369,7 @@ def human_size(bytes)
 end
 
 def cmd_exec(args = nil)
+  refresh_image! if image_too_old?
   # Mounts are fixed at create time, so each directory gets its own sandbox.
   # Create it on first use with the current directory as /workspace.
   unless sandbox_exists?
