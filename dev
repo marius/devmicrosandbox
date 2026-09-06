@@ -1,12 +1,16 @@
 #!/usr/bin/env ruby
 # dev - manage the opencode microsandbox for this project
 #
+# Each project directory gets its own sandbox (name derived from the cwd),
+# with the current directory mounted at /workspace. exec/opencode auto-create
+# the sandbox on first use, so an explicit `create` is optional.
+#
 # Usage:
 #   ./dev build     - docker build + load into microsandbox
-#   ./dev create    - create the sandbox (volume, resources, secret)
-#   ./dev remove    - remove the sandbox
-#   ./dev exec      - drop into a shell inside the running sandbox
-#   ./dev opencode  - run opencode inside the sandbox (args passed through)
+#   ./dev create    - create this directory's sandbox (volume, resources, secret)
+#   ./dev remove    - remove this directory's sandbox
+#   ./dev exec      - drop into a shell inside this directory's sandbox
+#   ./dev opencode  - run opencode inside this directory's sandbox (args passed through)
 #   ./dev backup    - take a git snapshot backup right now
 #   ./dev gc        - garbage-collect old backups (time-tiered retention)
 #   ./dev check-git - check the current repo against the latest snapshot
@@ -24,8 +28,14 @@ require 'time'
 require 'digest'
 
 AUTH_FILE = File.expand_path('~/.local/share/opencode/auth.json')
-IMAGE = 'opencode-sandbox'
-SANDBOX_NAME = 'opencode-dev'
+IMAGE = 'devmsb'
+
+# One sandbox per project directory, so each sandbox's /workspace mount can
+# stay fixed at create time. Name includes a hash of the full path to avoid
+# collisions between same-named directories.
+def sandbox_name
+  "devmsb-#{File.basename(Dir.pwd)}-#{Digest::SHA256.hexdigest(Dir.pwd)[0..7]}"
+end
 
 BACKUP_DIR = "#{Dir.pwd}_backups"
 GIT_MIRROR_DIR = File.join(BACKUP_DIR, 'git')
@@ -77,14 +87,12 @@ end
 
 def cmd_create
   ENV['OPENROUTER_API_KEY'] = openrouter_key
-  workspace = Dir.pwd
-
-  created = system(
+    created = system(
     'microsandbox', 'create', IMAGE,
-    '--volume', "#{workspace}:/workspace",
+    '--volume', "#{Dir.pwd}:/workspace",
     '--memory', '6G',
     '--cpus', '6',
-    '--name', SANDBOX_NAME,
+    '--name', sandbox_name,
     '--workdir', '/workspace',
     '--secret', 'OPENROUTER_API_KEY@openrouter.ai',
     *dotfile_mount_args
@@ -92,8 +100,13 @@ def cmd_create
   abort 'microsandbox create failed' unless created
 end
 
+def sandbox_exists?
+  system('microsandbox', 'inspect', sandbox_name,
+         out: File::NULL, err: File::NULL)
+end
+
 def cmd_remove
-  removed = system("microsandbox remove --force #{SANDBOX_NAME}")
+  removed = system('microsandbox', 'remove', '--force', sandbox_name)
   abort 'microsandbox remove failed' unless removed
 end
 
@@ -309,6 +322,12 @@ def human_size(bytes)
 end
 
 def cmd_exec(args = nil)
+  # Mounts are fixed at create time, so each directory gets its own sandbox.
+  # Create it on first use with the current directory as /workspace.
+  unless sandbox_exists?
+    puts "No sandbox for #{Dir.pwd} yet - creating #{sandbox_name}"
+    cmd_create
+  end
   cmd_backup_if_changed(force: true)
   stop = false
   thread = Thread.new do
@@ -337,7 +356,7 @@ def cmd_exec(args = nil)
   ENV['OPENROUTER_API_KEY'] = openrouter_key
   args = ARGV[1..] if args.nil?
   args = [ENV['SHELL'] || 'fish'] if args.empty?
-  ok = system('microsandbox', 'exec', SANDBOX_NAME, '--', *args)
+  ok = system('microsandbox', 'exec', sandbox_name, '--', *args)
 
   stop = true
   thread.wakeup # interrupts sleep
