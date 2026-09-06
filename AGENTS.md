@@ -22,8 +22,9 @@ Infrastructure for an OpenCode "microsandbox" (VM-based dev environment). The on
 - **Backups live outside the repo**: `${workspace}_backups/` as a sibling directory (contains `git/` bare mirror and `restic/`). The `_backups` dir is not part of this git repo.
 - **Dotfiles**: `dev create` read-only-mounts host dotfiles into the sandbox per `~/.config/devmicrosandbox/dotfiles.txt`, one `host_path:guest_path` per line (`host_path` relative to `$HOME`, e.g. `.gitconfig:/root/.gitconfig`). Blank lines and `#` comments ignored; dirs become `--mount-dir`, files `--mount-file`. Missing dotfiles list means no mounts; missing host dotfile or malformed line aborts `create`.
 - **External deps required**: `docker`, `microsandbox`, `restic`, `git` and Ruby are prerequisites. `dev create`/`exec`/`opencode` read the OpenRouter key from `~/.local/share/opencode/auth.json` and export it as `OPENROUTER_API_KEY` for the sandbox.
-- **Rebuild after editing the image**: `Dockerfile` + `packages.txt` changes only take effect after `./dev build && ./dev remove && ./dev create`.
-- **`packages.txt`** lists apt packages; lines starting with `#` are ignored. The Docker base is `node:26` with a global `npm install -g opencode-ai`.
+- **Rebuild after editing the image**: `Dockerfile`, `setup.sh` + `packages.txt` changes only take effect after `./dev build && ./dev remove && ./dev create`.
+- **`packages.txt`** lists apt packages; lines starting with `#` are ignored. The Docker base is `node:26`.
+- **`setup.sh`** contains the image provisioning steps (apt install from `packages.txt`, global npm agents, herdr + integrations, okf CLI); the `Dockerfile` just copies it in and runs it with `bash`.
 
 ## What's tracked here
 
