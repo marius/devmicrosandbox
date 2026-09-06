@@ -1,0 +1,35 @@
+AllCops:
+  NewCops: disable
+  TargetRubyVersion: 3.3
+  Include:
+    - '**/*.rb'
+    - '**/*.gemspec'
+    - '**/Rakefile'
+    - dev
+
+# Method chains break after the receiver, continuations indented
+# one step (2 spaces) instead of aligned with the first `.`.
+Layout/MultilineMethodCallIndentation:
+  EnforcedStyle: indented
+
+# `dev` is a single-file CLI script; long methods and complex
+# control flow are acceptable there, so Metrics cops don't apply.
+Metrics/MethodLength:
+  Exclude:
+    - dev
+
+Metrics/AbcSize:
+  Exclude:
+    - dev
+
+Metrics/CyclomaticComplexity:
+  Exclude:
+    - dev
+
+Metrics/PerceivedComplexity:
+  Exclude:
+    - dev
+
+Metrics/BlockLength:
+  Exclude:
+    - dev

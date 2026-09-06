@@ -1,4 +1,6 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
+
 # dev - manage the opencode microsandbox for this project
 #
 # Each project directory gets its own sandbox (name derived from the cwd),
@@ -37,7 +39,7 @@ def sandbox_name
   "devmsb-#{File.basename(Dir.pwd)}-#{Digest::SHA256.hexdigest(Dir.pwd)[0..7]}"
 end
 
-BACKUP_DIR = "#{Dir.pwd}_backups"
+BACKUP_DIR = "#{Dir.pwd}_backups".freeze
 GIT_MIRROR_DIR = File.join(BACKUP_DIR, 'git')
 RESTIC_REPO = File.join(BACKUP_DIR, 'restic')
 FINGERPRINT_FILE = File.join(BACKUP_DIR, 'last_fingerprint')
@@ -88,7 +90,7 @@ end
 def cmd_create
   refresh_image! if image_too_old?
   ENV['OPENROUTER_API_KEY'] = openrouter_key
-    created = system(
+  created = system(
     'microsandbox', 'create', IMAGE,
     '--volume', "#{Dir.pwd}:/workspace",
     '--memory', '6G',
@@ -122,6 +124,7 @@ end
 
 def image_too_old?
   return false if @image_age_checked
+
   @image_age_checked = true
 
   created = image_created_at
@@ -137,14 +140,14 @@ def image_too_old?
   days = (age / 86_400).floor
   puts "Image '#{IMAGE}' is #{days} days old (built #{created.strftime('%Y-%m-%d %H:%M %Z')}) - older than 1 week."
   puts 'Refresh recommended: ./dev build && ./dev remove && ./dev create'
-  unless STDIN.tty?
+  unless $stdin.tty?
     warn 'Non-interactive session - continuing with old image.'
     return false
   end
 
   print 'Refresh now? [y/N] '
-  answer = STDIN.gets&.strip&.downcase
-  answer == 'y' || answer == 'yes'
+  answer = $stdin.gets&.strip&.downcase
+  %w[y yes].include?(answer)
 end
 
 def refresh_image!
@@ -183,7 +186,8 @@ def cmd_backup_files
     puts 'Creating new restic repository'
     system(
       'restic', '--insecure-no-password',
-      'init', '-r', RESTIC_REPO) or abort 'restic init failed'
+      'init', '-r', RESTIC_REPO
+    ) or abort 'restic init failed'
   end
 
   system(
@@ -200,8 +204,8 @@ end
 def workspace_fingerprint
   workspace = Dir.pwd
   files = Dir.glob(File.join(workspace, '**', '*'), File::FNM_DOTMATCH)
-              .select { |f| File.file?(f) }
-              .sort
+    .select { |f| File.file?(f) }
+    .sort
   Digest::SHA256.hexdigest(
     files.map { |f| "#{f.sub(workspace + File::SEPARATOR, '')}:#{Digest::SHA256.file(f).hexdigest}" }.join("\n")
   )
@@ -209,6 +213,7 @@ end
 
 def last_fingerprint
   return nil unless File.exist?(FINGERPRINT_FILE)
+
   File.read(FINGERPRINT_FILE).strip
 end
 
@@ -218,6 +223,7 @@ end
 
 def cmd_backup_if_changed(force: false)
   return unless force || workspace_changed?
+
   cmd_backup
   FileUtils.mkdir_p(BACKUP_DIR)
   File.write(FINGERPRINT_FILE, workspace_fingerprint)
@@ -262,7 +268,8 @@ def cmd_check_git
 
       Dir.chdir(workspace) do
         unless system('git', 'merge-base', '--is-ancestor', old_sha, current_sha)
-          problems << "branch '#{branch}' history was rewritten - #{old_sha[0..7]} is no longer an ancestor of #{current_sha[0..7]}"
+          problems << "branch '#{branch}' history was rewritten - " \
+                      "#{old_sha[0..7]} is no longer an ancestor of #{current_sha[0..7]}"
         end
       end
     end
@@ -278,6 +285,7 @@ end
 
 def git_timestamps
   return [] unless Dir.exist?(GIT_MIRROR_DIR)
+
   Dir.chdir(GIT_MIRROR_DIR) do
     `git for-each-ref --format='%(refname)' refs/snapshots/`.lines
       .map { |l| l.split('/')[2] }
@@ -289,23 +297,24 @@ end
 
 def retained_timestamps(timestamps, now = Time.now)
   return [] if timestamps.empty?
+
   retained = [timestamps.first] + timestamps.first(GC_KEEP_LAST)
   parsed = timestamps.map { |t| [t, Time.strptime(t, '%Y%m%dT%H%M%S')] }
 
   GC_KEEP_DAILY.times do |i|
-    day = (now - i * 86400).strftime('%Y%m%d')
+    day = (now - i * 86_400).strftime('%Y%m%d')
     newest = parsed.select { |_, tm| tm.strftime('%Y%m%d') == day }.map(&:first).max
     retained << newest if newest
   end
 
   GC_KEEP_WEEKLY.times do |i|
-    week = (now - i * 7 * 86400).strftime('%G-W%V')
+    week = (now - i * 7 * 86_400).strftime('%G-W%V')
     newest = parsed.select { |_, tm| tm.strftime('%G-W%V') == week }.map(&:first).max
     retained << newest if newest
   end
 
   GC_KEEP_MONTHLY.times do |i|
-    month = (now - i * 30 * 86400).strftime('%Y%m')
+    month = (now - i * 30 * 86_400).strftime('%Y%m')
     newest = parsed.select { |_, tm| tm.strftime('%Y%m') == month }.map(&:first).max
     retained << newest if newest
   end
@@ -315,10 +324,13 @@ end
 
 def gc_git
   return unless Dir.exist?(GIT_MIRROR_DIR)
+
   timestamps = git_timestamps
   return if timestamps.empty?
+
   retained = retained_timestamps(timestamps)
   return if retained.empty?
+
   expired = timestamps - retained
   return if expired.empty?
 
@@ -335,6 +347,7 @@ end
 
 def gc_restic
   return unless Dir.exist?(RESTIC_REPO)
+
   system(
     'restic', '-q', '--insecure-no-password', '-r', RESTIC_REPO,
     'forget',
@@ -356,16 +369,17 @@ end
 
 def backup_size
   return unless Dir.exist?(BACKUP_DIR)
+
   Dir.glob(File.join(BACKUP_DIR, '**', '*'), File::FNM_DOTMATCH)
-          .select { |f| File.file?(f) }
-          .sum { |f| File.size(f) }
+    .select { |f| File.file?(f) }
+    .sum { |f| File.size(f) }
 end
 
 def human_size(bytes)
   units = %w[B KB MB GB TB]
   power = 0
   power += 1 while bytes >= 1024**(power + 1) && power < units.size - 1
-  '%g %s' % [bytes.to_f / (1024**power), units[power]]
+  format('%<value>g %<unit>s', value: bytes.to_f / (1024**power), unit: units[power])
 end
 
 def cmd_exec(args = nil)
@@ -381,6 +395,7 @@ def cmd_exec(args = nil)
   thread = Thread.new do
     loop do
       break if stop
+
       sleep BACKUP_INTERVAL
       break if stop
 
@@ -428,7 +443,7 @@ COMMANDS = {
 handler = COMMANDS[ARGV[0]]
 
 unless handler
-  warn "Usage: #{File.basename($0)} <#{COMMANDS.keys.join('|')}>"
+  warn "Usage: #{File.basename($PROGRAM_NAME)} <#{COMMANDS.keys.join('|')}>"
   exit 1
 end
 
