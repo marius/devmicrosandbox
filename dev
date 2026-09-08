@@ -99,6 +99,7 @@ def cmd_create
     '--cpus', '6',
     '--name', sandbox_name,
     '--workdir', '/workspace',
+    '--idle-timeout', '30m',
     '--secret', 'OPENROUTER_API_KEY@openrouter.ai',
     '--env', 'OPENCODE_ENABLE_EXA=1',
     *dotfile_mount_args
@@ -109,6 +110,30 @@ end
 def sandbox_exists?
   system('microsandbox', 'inspect', sandbox_name,
          out: File::NULL, err: File::NULL)
+end
+
+# `start` fails when the sandbox is already running, so check `inspect`
+# first and only start when it isn't Running.
+def sandbox_running?
+  out, status = Open3.capture2('microsandbox', 'inspect', sandbox_name, '--format', 'json')
+  return false unless status.success?
+
+  JSON.parse(out)['status'] == 'Running'
+rescue StandardError
+  false
+end
+
+def ensure_sandbox_running
+  return if sandbox_running?
+
+  # Still tolerate "already running": a concurrent exec may have started it
+  # between our inspect and this start.
+  out, status = Open3.capture2e('microsandbox', 'start', sandbox_name)
+  if status.success?
+    puts out unless out.strip.empty?
+  elsif out !~ /already running/i
+    abort "microsandbox start failed: #{out.strip}"
+  end
 end
 
 def image_created_at
@@ -409,6 +434,11 @@ def cmd_exec(args = nil)
     puts "No sandbox for #{Dir.pwd} yet - creating #{sandbox_name}"
     cmd_create
   end
+  ENV['OPENROUTER_API_KEY'] = openrouter_key
+  # `microsandbox exec` on a stopped sandbox starts it temporarily and stops
+  # it again when that exec exits, killing all other concurrent execs. Start
+  # first so exec never takes temporary ownership.
+  ensure_sandbox_running
   # Only one exec session per project dir runs the periodic backup loop
   # (the leader, holding LOCK_EX on LEADER_LOCK_FILE). Followers poll for
   # leadership so one of them takes over if the leader exits first.
@@ -443,7 +473,6 @@ def cmd_exec(args = nil)
   end
   thread.abort_on_exception = false
 
-  ENV['OPENROUTER_API_KEY'] = openrouter_key
   args = ARGV[1..] if args.nil?
   args = [ENV['SHELL'] || 'fish'] if args.empty?
   ok = true
