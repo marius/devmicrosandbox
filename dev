@@ -200,7 +200,7 @@ def cmd_backup_git
   refspec = "+refs/heads/*:refs/snapshots/#{timestamp}/*"
 
   Dir.chdir(GIT_MIRROR_DIR) do
-    system('git', 'fetch', '--quiet', workspace, refspec) or warn 'git fetch failed'
+    system('git', 'fetch', '--quiet', workspace, refspec) or warn 'Git fetch failed'
   end
 end
 
@@ -220,7 +220,7 @@ def cmd_backup_files
   system(
     'restic', '-q', '--insecure-no-password', '-r', RESTIC_REPO, 'backup', workspace,
     '--tag', 'opencode-sandbox', '--tag', name
-  ) or warn 'restic backup failed'
+  ) or warn 'Restic backup failed'
 end
 
 def cmd_backup
@@ -306,13 +306,13 @@ def cmd_check_git
       current_sha = Dir.chdir(workspace) { `git rev-parse --verify #{branch} 2>/dev/null`.strip }
 
       if current_sha.empty?
-        problems << "branch '#{branch}' no longer exists in the workspace (was #{old_sha[0..7]})"
+        problems << "Branch '#{branch}' no longer exists in the workspace (was #{old_sha[0..7]})"
         next
       end
 
       Dir.chdir(workspace) do
         unless system('git', 'merge-base', '--is-ancestor', old_sha, current_sha)
-          problems << "branch '#{branch}' history was rewritten - " \
+          problems << "Branch '#{branch}' history was rewritten - " \
                       "#{old_sha[0..7]} is no longer an ancestor of #{current_sha[0..7]}"
         end
       end
@@ -386,7 +386,7 @@ def gc_git
     end
     system('git', 'gc', '--prune=now', '--quiet')
   end
-  puts "git: pruned #{expired.size} snapshot group(s), kept #{retained.size}"
+  puts "Git: pruned #{expired.size} snapshot group(s), kept #{retained.size}"
 end
 
 def gc_restic
@@ -400,7 +400,7 @@ def gc_restic
     '--keep-weekly', GC_KEEP_WEEKLY.to_s,
     '--keep-monthly', GC_KEEP_MONTHLY.to_s,
     '--prune'
-  ) or warn 'restic forget failed'
+  ) or warn 'Restic forget failed'
 end
 
 def cmd_gc
@@ -444,12 +444,12 @@ def cmd_exec(args = nil)
   # leadership so one of them takes over if the leader exits first.
   leader = acquire_leader_lock
   if leader
-    puts 'this session is the backup leader'
+    puts 'This session is the backup leader'
     # The entry-leader snapshots the pre-session state; a follower skips
     # this since the leader covers changes within minutes anyway.
     cmd_backup_if_changed(force: false)
   else
-    puts 'another exec session is the backup leader - running without a backup loop'
+    puts 'Another exec session is the backup leader - running without a backup loop'
   end
   stop = false
   thread = Thread.new do
@@ -463,11 +463,11 @@ def cmd_exec(args = nil)
         begin
           cmd_backup_if_changed
         rescue StandardError => e
-          warn "background backup failed: #{e.message}"
+          warn "Background backup failed: #{e.message}"
         end
       elsif (promoted = acquire_leader_lock)
         leader = promoted
-        puts 'this session is now the backup leader'
+        puts 'This session is now the backup leader'
       end
     end
   end
@@ -481,7 +481,7 @@ def cmd_exec(args = nil)
   ensure
     stop = true
     thread.wakeup # interrupts sleep
-    puts 'waiting for backup thread to finish'
+    puts 'Waiting for backup thread to finish'
     thread.join
 
     begin
@@ -491,16 +491,16 @@ def cmd_exec(args = nil)
       # then no-ops on its fresh fingerprint check.
       leader ||= acquire_leader_lock
       if leader
-        puts 'creating one last backup, if there are changes'
+        puts 'Creating one last backup, if there are changes'
         begin
           cmd_backup_if_changed
           cmd_check_git
           cmd_gc
         rescue StandardError => e
-          warn "final backup/gc failed: #{e.message}"
+          warn "Final backup/gc failed: #{e.message}"
         end
       else
-        puts 'another exec session is the backup leader - skipping final backup/gc'
+        puts 'Another exec session is the backup leader - skipping final backup/gc'
       end
     ensure
       leader&.close # release leadership (no-op for followers)
