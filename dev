@@ -97,6 +97,7 @@ def cmd_create
     '--volume', "#{Dir.pwd}:/workspace",
     '--memory', '6G',
     '--cpus', '6',
+    '--root-disk', '8G',
     '--name', sandbox_name,
     '--workdir', '/workspace',
     '--idle-timeout', '30m',
