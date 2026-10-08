@@ -29,7 +29,7 @@ require 'time'
 require 'digest'
 
 AUTH_FILE = File.expand_path('~/.local/share/opencode/auth.json')
-IMAGE = 'devmsb'
+IMAGE = 'devmsb:latest'
 IMAGE_MAX_AGE = 7 * 24 * 60 * 60 # 1 week in seconds
 
 # One sandbox per project directory, so each sandbox's /workspace mount can
@@ -62,11 +62,11 @@ def openrouter_key
 end
 
 def cmd_build
-  system('docker', 'buildx', 'build', '--no-cache', '-t', IMAGE, '.') or abort 'docker build failed'
+  system('docker', 'buildx', 'build', '--load', '--no-cache', '-t', IMAGE, '.') or abort 'docker build failed'
 
   statuses = Open3.pipeline(
     ['docker', 'save', IMAGE],
-    %w[microsandbox load]
+    ['microsandbox', 'load', '--tag', IMAGE]
   )
   abort 'docker save | microsandbox load failed' unless statuses.all?(&:success?)
 end
