@@ -2,6 +2,8 @@
 
 Infrastructure for an OpenCode "microsandbox" (VM-based dev environment). The only real code is `dev` — a self-contained Ruby script that manages the sandbox. There is no app code or test suite here.
 
+It is very likely that you are currently running in a sandbox, so commands like docker and microsandbox won't work.
+
 ## Commands
 
 `dev` is the single entrypoint; run it as `./dev <command>` (it is executable Ruby, no build step):
