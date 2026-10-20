@@ -95,7 +95,7 @@ def cmd_create
   created = system(
     'microsandbox', 'create', 'devmsb',
     '--volume', "#{Dir.pwd}:/workspace",
-    '--memory', '6G',
+    '--memory', '16G',
     '--cpus', '6',
     '--root-disk', '8G',
     '--name', sandbox_name,
