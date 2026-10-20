@@ -9,6 +9,7 @@ rm -rf /var/lib/apt/lists/* /tmp/packages.txt
 # Global npm agents
 # npm install -g --allow-scripts=opencode-ai opencode-ai
 curl -fsSL https://opencode.ai/v2/install | bash
+mv /root/.opencode/bin/opencode /usr/local/bin
 # npm install -g --ignore-scripts @earendil-works/pi-coding-agent
 
 # Herdr + integrations
